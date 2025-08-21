@@ -1,6 +1,6 @@
 fn main() {
-    println!("cargo:rerun-if-changed=src/boot/multiboot2_header.S");
+    // Compila nuestro archivo de ensamblador y lo enlaza al kernel.
     cc::Build::new()
-        .file("src/boot/multiboot2_header.S")
-        .compile("multiboot2_header");
+        .file("src/arch/x86_64/halt.S")
+        .compile("asm");
 }

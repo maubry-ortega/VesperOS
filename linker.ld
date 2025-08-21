@@ -4,11 +4,24 @@ SECTIONS {
     . = 1M;
 
     .text : {
-        KEEP(*(.multiboot2_header))  /* Header primero */
-        *(.text*)
+        *(.text .text.*)
     }
 
-    .rodata : { *(.rodata*) }
-    .data   : { *(.data*) }
-    .bss    : { *(.bss*) *(COMMON) }
+    .rodata : {
+        *(.rodata .rodata.*)
+    }
+
+    .data : {
+        *(.data .data.*)
+    }
+
+    .bss : {
+        *(.bss .bss.*)
+    }
+
+    /DISCARD/ : {
+        *(.eh_frame)
+        *(.comment)
+    }
 }
+

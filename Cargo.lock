@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "VesperOS"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "limine",
+]
+
+[[package]]
+name = "bitflags"
+version = "2.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a65b545ab31d687cff52899d4890855fec459eb6afe0da6417b8a18da87aa29"
+
+[[package]]
 name = "cc"
 version = "1.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12,10 +26,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "kernel_minimo"
-version = "0.1.0"
+name = "limine"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af6d2ee42712e7bd2c787365cd1dab06ef59a61becbf87bec7b32b970bd2594b"
 dependencies = [
- "cc",
+ "bitflags",
 ]
 
 [[package]]
