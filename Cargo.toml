@@ -5,10 +5,16 @@ edition = "2024"
 
 [dependencies]
 limine = "0.5.0"
-noto-sans-mono-bitmap = "0.3.1"
+# noto-sans-mono-bitmap = "0.3.1"
+# Para futuro modo gráfico considera:
+embedded-graphics = "0.8.1"
+profont = "0.7.0"
+tinybmp = "0.6.0"
+heapless = "0.9.1"
 
 [build-dependencies]
 cc = "1.0"
+png = "0.17"
 
 [profile.dev]
 panic = "abort"

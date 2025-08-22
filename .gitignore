@@ -1,2 +1,4 @@
 /target
-.iso
+**.iso
+limine
+isodir
