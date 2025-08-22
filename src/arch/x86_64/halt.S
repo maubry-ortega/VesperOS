@@ -1,5 +1,5 @@
-// Define una función global llamada `hlt`
+/* src/arch/x86_64/halt.S */
 .global hlt
 hlt:
-    hlt // Instrucción para detener el CPU
-    ret // Retornar de la función
+    hlt
+    ret

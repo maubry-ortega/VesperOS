@@ -19,6 +19,7 @@ TARGET_DIR = ./target
 ISO_DIR = ./isodir
 ISO_FILE = ./VesperOS.iso
 LIMINE_DIR = ./limine
+LINKER_SCRIPT = ./linker.ld
 
 # Kernel
 KERNEL_TARGET = x86_64-unknown-none
@@ -32,7 +33,8 @@ all: build
 
 build:
 	@echo ">>> Compilando el kernel VesperOS..."
-	@$(CARGO) build --target=$(KERNEL_TARGET)
+	@RUSTFLAGS="-C link-arg=-T$(LINKER_SCRIPT) -C link-arg=-z -C link-arg=max-page-size=0x1000 -C force-frame-pointers=no -C link-arg=-no-pie" \
+	$(CARGO) build --target=$(KERNEL_TARGET)
 
 clean:
 	@echo ">>> Limpiando artefactos de compilación..."

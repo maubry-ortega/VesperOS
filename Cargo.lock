@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "limine",
+ "noto-sans-mono-bitmap",
 ]
 
 [[package]]
@@ -33,6 +34,12 @@ checksum = "af6d2ee42712e7bd2c787365cd1dab06ef59a61becbf87bec7b32b970bd2594b"
 dependencies = [
  "bitflags",
 ]
+
+[[package]]
+name = "noto-sans-mono-bitmap"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1064d564ae026ae123bf5d607318b42a5b31d70a3c48e6ea7ee44cce4cdb095e"
 
 [[package]]
 name = "shlex"
