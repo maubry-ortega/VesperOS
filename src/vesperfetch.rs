@@ -1,32 +1,48 @@
-//! Módulo VesperFetch - Información del sistema al estilo Neofetch pero propio
+//! Módulo VesperFetch: una utilidad para mostrar información del sistema.
+//!
+//! Inspirado en herramientas como Neofetch, VesperFetch presenta datos clave
+//! del sistema operativo junto al logo de VesperOS de una forma estilizada.
 
 use core::fmt::Write;
 use crate::vga::FramebufferWriter;
 use crate::branding;
 use crate::colors;
 
-/// Información del sistema para mostrar en VesperFetch
+/// Contiene la información del sistema que se mostrará en VesperFetch.
 #[derive(Clone, Copy)]
 pub struct SystemInfo {
+    /// Nombre del sistema operativo.
     pub os_name: &'static str,
+    /// Versión del sistema operativo.
     pub os_version: &'static str,
+    /// Versión del kernel.
     pub kernel_version: &'static str,
+    /// Información de la CPU (actualmente un placeholder).
     pub cpu_info: &'static str,
+    /// Tiempo de actividad del sistema (actualmente un placeholder).
     pub uptime: &'static str,
+    /// Memoria total usable en Megabytes.
     pub memory_total_mb: u64,
+    /// Ancho de la resolución de pantalla en píxeles.
     pub resolution_width: u64,
+    /// Alto de la resolución de pantalla en píxeles.
     pub resolution_height: u64,
 }
 
-/// Estilo y tema de VesperFetch
+/// Define la paleta de colores para la interfaz de VesperFetch.
 pub struct VesperFetchTheme {
+    /// Color para las etiquetas (ej: "Kernel:").
     pub label_color: colors::Color,
+    /// Color para los valores (ej: "Vesper-Core").
     pub value_color: colors::Color,
+    /// Color de acento para el nombre del SO.
     pub accent_color: colors::Color,
+    /// Color para bordes o separadores.
     pub border_color: colors::Color,
 }
 
 impl Default for VesperFetchTheme {
+    /// Proporciona el tema de colores por defecto para VesperFetch.
     fn default() -> Self {
         Self {
             label_color: colors::BRIGHT_VIOLET,
@@ -37,14 +53,17 @@ impl Default for VesperFetchTheme {
     }
 }
 
-/// Renderizador de VesperFetch
+/// El renderizador principal de VesperFetch.
+///
+/// Esta estructura toma la información del sistema y un tema, y se encarga
+/// de dibujarlos en el framebuffer.
 pub struct VesperFetch {
     theme: VesperFetchTheme,
     system_info: SystemInfo,
 }
 
 impl VesperFetch {
-    /// Crear nueva instancia de VesperFetch
+    /// Crea una nueva instancia de `VesperFetch` con la información del sistema dada.
     pub fn new(system_info: SystemInfo) -> Self {
         Self {
             theme: VesperFetchTheme::default(),
@@ -52,71 +71,43 @@ impl VesperFetch {
         }
     }
 
-    /// Cambiar tema
+    /// Permite personalizar el tema de colores de VesperFetch.
     #[allow(dead_code)]
     pub fn with_theme(mut self, theme: VesperFetchTheme) -> Self {
         self.theme = theme;
         self
     }
 
-    /// Mostrar VesperFetch en el framebuffer
+    /// Dibuja la interfaz de VesperFetch en el framebuffer en la posición especificada.
+    ///
+    /// # Arguments
+    ///
+    /// * `writer`: Una referencia mutable al `FramebufferWriter` donde se dibujará.
+    /// * `x`, `y`: Las coordenadas de la esquina superior izquierda del área de VesperFetch.
     pub fn display(&self, writer: &mut FramebufferWriter, x: usize, y: usize) {
-        // La ventana de VesperFetch es de aprox. 300x200 píxeles.
+        // El diseño se divide en dos columnas: el logo a la izquierda y la info a la derecha.
         self.draw_logo(writer, x + 20, y + 20);
         self.draw_info(writer, x + 140, y + 25);
     }
 
-    /*
-    /// Dibujar borde decorativo
-    fn draw_border(&self, writer: &mut FramebufferWriter, x: usize, y: usize) {
-        writer.set_text_color(self.theme.border_color);
-        
-        // Esquinas
-        writer.set_cursor_position(x, y);
-        write!(writer, "╔").unwrap();
-        writer.set_cursor_position(x + 299, y);
-        write!(writer, "╗").unwrap();
-        writer.set_cursor_position(x, y + 199);
-        write!(writer, "╚").unwrap();
-        writer.set_cursor_position(x + 299, y + 199);
-        write!(writer, "╝").unwrap();
-
-        // Bordes horizontales
-        for i in 1..299 {
-            writer.set_cursor_position(x + i, y);
-            write!(writer, "═").unwrap();
-            writer.set_cursor_position(x + i, y + 199);
-            write!(writer, "═").unwrap();
-        }
-
-        // Bordes verticales
-        for i in 1..199 {
-            writer.set_cursor_position(x, y + i);
-            write!(writer, "║").unwrap();
-            writer.set_cursor_position(x + 299, y + i);
-            write!(writer, "║").unwrap();
-        }
-    }
-    */
-
-    /// Dibuja el logo de VesperOS usando la imagen del módulo `branding`.
+    /// Dibuja el logo de VesperOS en el área designada.
     fn draw_logo(&self, writer: &mut FramebufferWriter, x: usize, y: usize) {
-        // El área del logo es de aprox. 120px de ancho. Centramos la imagen de 32x32.
+        // Centra la imagen del logo dentro del espacio asignado.
         let logo_x = x + (120 - branding::VESPER_LOGO_IMAGE.width) / 2;
         writer.blit_raw_image(&branding::VESPER_LOGO_IMAGE, logo_x, y);
     }
 
-    /// Dibujar información del sistema
+    /// Dibuja la lista de información del sistema.
     fn draw_info(&self, writer: &mut FramebufferWriter, x: usize, y: usize) {
         let mut current_y = y;
         const LINE_HEIGHT: usize = 20;
-        const VALUE_OFFSET: usize = 100;
+        const VALUE_OFFSET: usize = 100; // Desplazamiento horizontal para los valores.
 
         // OS + Version
-        writer.set_color(self.theme.accent_color); // Usamos accent_color para el nombre del OS
+        writer.set_color(self.theme.accent_color);
         writer.set_cursor_position(x, current_y);
         write!(writer, "{}", self.system_info.os_name).unwrap();
-        writer.set_color(self.theme.value_color); // Volvemos a value_color para la versión
+        writer.set_color(self.theme.value_color);
         write!(writer, "@{}", self.system_info.os_version).unwrap();
         current_y += LINE_HEIGHT;
 
@@ -126,34 +117,12 @@ impl VesperFetch {
         write!(writer, "------------------").unwrap();
         current_y += LINE_HEIGHT;
 
-        // Kernel
-        writer.set_color(self.theme.label_color);
-        writer.set_cursor_position(x, current_y);
-        write!(writer, "Kernel:").unwrap();
-        writer.set_color(self.theme.value_color);
-        writer.set_cursor_position(x + VALUE_OFFSET, current_y);
-        write!(writer, "{}", self.system_info.kernel_version).unwrap();
-        current_y += LINE_HEIGHT;
+        // Dibuja cada par etiqueta-valor.
+        self.draw_info_line(writer, x, &mut current_y, LINE_HEIGHT, VALUE_OFFSET, "Kernel:", self.system_info.kernel_version);
+        self.draw_info_line(writer, x, &mut current_y, LINE_HEIGHT, VALUE_OFFSET, "CPU:", self.system_info.cpu_info);
+        self.draw_info_line(writer, x, &mut current_y, LINE_HEIGHT, VALUE_OFFSET, "Uptime:", self.system_info.uptime);
 
-        // CPU
-        writer.set_color(self.theme.label_color);
-        writer.set_cursor_position(x, current_y);
-        write!(writer, "CPU:").unwrap();
-        writer.set_color(self.theme.value_color);
-        writer.set_cursor_position(x + VALUE_OFFSET, current_y);
-        write!(writer, "{}", self.system_info.cpu_info).unwrap();
-        current_y += LINE_HEIGHT;
-
-        // Uptime
-        writer.set_color(self.theme.label_color);
-        writer.set_cursor_position(x, current_y);
-        write!(writer, "Uptime:").unwrap();
-        writer.set_color(self.theme.value_color);
-        writer.set_cursor_position(x + VALUE_OFFSET, current_y);
-        write!(writer, "{}", self.system_info.uptime).unwrap();
-        current_y += LINE_HEIGHT;
-
-        // Memory
+        // Memory (con formato)
         writer.set_color(self.theme.label_color);
         writer.set_cursor_position(x, current_y);
         write!(writer, "Memory:").unwrap();
@@ -162,7 +131,7 @@ impl VesperFetch {
         write!(writer, "{} MB", self.system_info.memory_total_mb).unwrap();
         current_y += LINE_HEIGHT;
 
-        // Resolution
+        // Resolution (con formato)
         writer.set_color(self.theme.label_color);
         writer.set_cursor_position(x, current_y);
         write!(writer, "Resolution:").unwrap();
@@ -171,19 +140,33 @@ impl VesperFetch {
         write!(writer, "{}x{}", self.system_info.resolution_width, self.system_info.resolution_height).unwrap();
     }
 
-    /// Versión minimalista para pantallas pequeñas
+    /// Función de ayuda para dibujar una línea de información (etiqueta y valor).
+    fn draw_info_line(&self, writer: &mut FramebufferWriter, x: usize, y: &mut usize, line_height: usize, value_offset: usize, label: &str, value: &str) {
+        writer.set_color(self.theme.label_color);
+        writer.set_cursor_position(x, *y);
+        write!(writer, "{}", label).unwrap();
+
+        writer.set_color(self.theme.value_color);
+        writer.set_cursor_position(x + value_offset, *y);
+        write!(writer, "{}", value).unwrap();
+
+        *y += line_height;
+    }
+
+    /// Muestra una versión minimalista de VesperFetch (actualmente igual a la principal).
     #[allow(dead_code)]
     pub fn display_minimal(&self, writer: &mut FramebufferWriter, x: usize, y: usize) {
-        // Por ahora, simplemente llamamos a la versión principal.
-        // Se puede personalizar más adelante si es necesario.
         self.display(writer, x, y);
     }
 }
 
-/// Versión animada
+/// Muestra VesperFetch con una animación de aparición gradual.
+///
+/// **Nota:** Esta función está marcada con `dead_code` porque actualmente no se usa
+/// en el flujo de arranque principal para evitar parpadeos y complejidad.
 #[allow(dead_code)]
 pub fn show_animated_fetch(writer: &mut FramebufferWriter, system_info: SystemInfo, x: usize, y: usize) {
-    // Animación simple de aparición
+    // Animación simple de aparición (fade-in).
     for i in 0..=100 {
         writer.clear(colors::DEEP_BLACK);
         
@@ -198,12 +181,17 @@ pub fn show_animated_fetch(writer: &mut FramebufferWriter, system_info: SystemIn
         let vesper_fetch = VesperFetch::new(system_info).with_theme(theme);
         vesper_fetch.display(writer, x, y);
         
-        // Pequeña pausa para la animación
+        // Pequeña pausa para controlar la velocidad de la animación.
         for _ in 0..10000 { unsafe { core::arch::asm!("nop"); } }
     }
 }
 
-/// Mezclar colores para animaciones
+/// Mezcla linealmente dos colores.
+///
+/// `alpha` es el factor de mezcla: 0.0 da `color1`, 1.0 da `color2`.
+///
+/// **Nota:** Esta función está marcada con `dead_code` porque solo la usa
+/// `show_animated_fetch`, que tampoco se utiliza.
 #[allow(dead_code)]
 fn blend_color(color1: colors::Color, color2: colors::Color, alpha: f32) -> colors::Color {
     let r1 = ((color1 >> 16) & 0xFF) as f32;

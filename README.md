@@ -48,6 +48,17 @@ s
 
 ---
 
+## 📚 Documentación
+
+El código fuente está completamente documentado siguiendo las convenciones de `rustdoc`. Para generar y ver la documentación localmente, ejecuta:
+
+```bash
+cargo doc --open
+```
+
+Además, puedes encontrar documentación de alto nivel sobre la arquitectura y guías de compilación en el directorio `docs/`.
+---
+
 ## 🔧 Pendiente por Implementar
 
 - 🦉 Limpieza de pantalla y control avanzado de salida VGA.

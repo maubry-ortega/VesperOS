@@ -12,9 +12,15 @@ profont = "0.7.0"
 tinybmp = "0.6.0"
 heapless = "0.9.1"
 
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+pic8259 = "0.11"
+spin = "0.10"
+pc-keyboard = "0.8.0"
+
+
 [build-dependencies]
 cc = "1.0"
-png = "0.17"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [profile.dev]
 panic = "abort"

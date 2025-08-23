@@ -1,4 +1,8 @@
 //! Módulo para manejar la escritura en el framebuffer (salida de video).
+//!
+//! Proporciona la estructura `FramebufferWriter` que abstrae el acceso directo
+//! a la memoria de video, permitiendo dibujar píxeles, texto e imágenes
+//! de una manera sencilla y segura.
 
 use core::fmt;
 use core::fmt::Write;
@@ -13,11 +17,16 @@ use profont::PROFONT_14_POINT;
 use tinybmp::Bmp;
 use limine::framebuffer::Framebuffer;
 
-use crate::colors; // Importamos nuestro módulo de colores
-use crate::branding; // Importamos el módulo de branding con el logo
+use crate::colors;
+use crate::branding;
 
 /// Estructura para escribir en el Framebuffer.
-/// Encapsula la lógica para dibujar píxeles y caracteres.
+///
+/// Encapsula la lógica para dibujar píxeles y caracteres, gestionando
+/// la posición del cursor, el color y el acceso a la memoria de video.
+/// Implementa los traits `core::fmt::Write` para el formateo de texto
+/// y `embedded_graphics::draw_target::DrawTarget` para ser compatible
+/// con la librería `embedded-graphics`.
 pub struct FramebufferWriter {
     framebuffer: &'static mut [u8],
     width: usize,
@@ -30,8 +39,19 @@ pub struct FramebufferWriter {
 }
 
 impl FramebufferWriter {
-    /// Crea una nueva instancia de `FramebufferWriter`.
-    pub fn new(fb: &Framebuffer) -> Self {  // Recibe &Framebuffer directamente
+    /// Crea una nueva instancia de `FramebufferWriter` a partir de un framebuffer de Limine.
+    ///
+    /// # Arguments
+    ///
+    /// * `fb`: Una referencia al `Framebuffer` proporcionado por el gestor de arranque.
+    ///
+    /// # Safety
+    ///
+    /// Esta función es `unsafe` porque convierte un puntero crudo (`fb.addr()`) en un
+    /// slice mutable de Rust (`&'static mut [u8]`). El llamador debe garantizar que
+    /// el puntero y la longitud del framebuffer son válidos y que no habrá accesos
+    /// concurrentes a esta memoria.
+    pub fn new(fb: &Framebuffer) -> Self {
         let addr = fb.addr() as *mut u8;
         let len = (fb.pitch() * fb.height()) as usize;
         
@@ -58,19 +78,31 @@ impl FramebufferWriter {
         self.y_pos
     }
 
+    /// Devuelve el ancho del framebuffer en píxeles.
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Devuelve el alto del framebuffer en píxeles.
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
     /// Cambia el color de texto actual.
     pub fn set_color(&mut self, color: colors::Color) {
         self.color = color;
     }
 
     /// Limpia toda la pantalla con el color especificado.
+    ///
+    /// Rellena cada píxel del framebuffer con el `color` dado y reinicia
+    /// la posición del cursor a su valor inicial.
     pub fn clear(&mut self, color: colors::Color) {
         let color_bytes = color.to_le_bytes();
         let pixel = &color_bytes[..self.bytes_per_pixel];
         for y in 0..self.height {
             for x in 0..self.width {
                 let offset = y * self.pitch + x * self.bytes_per_pixel;
-                // Usamos `copy_from_slice` para escribir el píxel.
                 self.framebuffer[offset..offset + self.bytes_per_pixel].copy_from_slice(pixel);
             }
         }
@@ -79,9 +111,11 @@ impl FramebufferWriter {
         self.y_pos = 20;
     }
 
-    /// Dibuja un píxel. Esta es la función base para todo el renderizado.
-    fn write_pixel(&mut self, x: usize, y: usize, color: colors::Color) {
-        // Aseguramos que las coordenadas estén dentro de los límites de la pantalla.
+    /// Dibuja un píxel en las coordenadas `(x, y)` con el `color` especificado.
+    ///
+    /// Esta es la función base para todo el renderizado. Ignora las coordenadas
+    /// que están fuera de los límites de la pantalla.
+    pub fn write_pixel(&mut self, x: usize, y: usize, color: colors::Color) {
         if x >= self.width || y >= self.height {
             return;
         }
@@ -91,10 +125,12 @@ impl FramebufferWriter {
             .copy_from_slice(&pixel_bytes[..self.bytes_per_pixel]);
     }
 
-    /// Dibuja un carácter en la posición actual del cursor usando `embedded-graphics`.
+    /// Dibuja un carácter en la posición actual del cursor.
+    ///
+    /// Maneja saltos de línea (`\n`) y ajusta el texto a la siguiente línea
+    /// si se alcanza el borde derecho de la pantalla.
     fn write_char(&mut self, c: char) {
         // Define el estilo del carácter usando la fuente ProFont y el color actual.
-        // Convertimos el color u32 a componentes R, G, B para Rgb888.
         let r = ((self.color >> 16) & 0xFF) as u8;
         let g = ((self.color >> 8) & 0xFF) as u8;
         let b = (self.color & 0xFF) as u8;
@@ -112,11 +148,11 @@ impl FramebufferWriter {
                     self.x_pos = 20;
                 }
 
-                // Crea un buffer de 1 carácter para dibujar
+                // Crea un buffer de 1 carácter para dibujar.
                 let mut buf = [0u8; 4];
                 let s = c.encode_utf8(&mut buf);
 
-                // Dibuja el texto usando embedded-graphics
+                // Dibuja el texto usando embedded-graphics.
                 Text::with_baseline(s, Point::new(self.x_pos as i32, self.y_pos as i32), char_style, Baseline::Top)
                     .draw(self)
                     .unwrap();
@@ -126,7 +162,22 @@ impl FramebufferWriter {
         }
     }
 
+    /// Borra el carácter anterior a la posición actual del cursor.
+    pub fn backspace(&mut self) {
+        let char_width = PROFONT_14_POINT.character_size.width as usize;
+        let left_margin = 20;
+
+        if self.x_pos > left_margin {
+            self.x_pos -= char_width;
+            let char_height = PROFONT_14_POINT.character_size.height as usize;
+            self.draw_rect(self.x_pos, self.y_pos, char_width, char_height, colors::BACKGROUND_COLOR);
+        }
+    }
+
     /// Dibuja una imagen de píxeles crudos en una posición específica.
+    ///
+    /// Después de dibujar, actualiza la posición del cursor de texto para que
+    /// se sitúe debajo de la imagen.
     pub fn draw_image(&mut self, image: &branding::RawImage, start_x: usize, start_y: usize) {
         for y in 0..image.height {
             for x in 0..image.width {
@@ -145,7 +196,7 @@ impl FramebufferWriter {
     /// Dibuja texto centrado horizontalmente en una posición Y específica.
     pub fn draw_centered_text(&mut self, y: usize, text: &str, color: colors::Color) {
         let text_len_chars = text.chars().count();
-        // Assuming average character width for centering. ProFont 14pt is 8px wide.
+        // Asume un ancho de carácter fijo para centrar. ProFont 14pt tiene 8px de ancho.
         let estimated_text_width_pixels = text_len_chars * 8; 
         let x = (self.width - estimated_text_width_pixels) / 2;
         self.set_cursor_position(x, y);
@@ -154,6 +205,9 @@ impl FramebufferWriter {
     }
 
     /// Dibuja una imagen de píxeles crudos sin afectar la posición del cursor de texto.
+    ///
+    /// A diferencia de `draw_image`, esta función es un "blit" puro y no modifica
+    /// el estado del cursor de texto.
     pub fn blit_raw_image(&mut self, image: &branding::RawImage, start_x: usize, start_y: usize) {
         for y in 0..image.height {
             for x in 0..image.width {
@@ -166,7 +220,18 @@ impl FramebufferWriter {
         }
     }
 
+    /// Dibuja un rectángulo relleno.
+    pub fn draw_rect(&mut self, x: usize, y: usize, width: usize, height: usize, color: colors::Color) {
+        for j in 0..height {
+            for i in 0..width {
+                self.write_pixel(x + i, y + j, color);
+            }
+        }
+    }
+
     /// Dibuja un bloque de píxeles RGB888 crudos.
+    ///
+    /// `data` debe ser un slice de bytes con formato `[R, G, B, R, G, B, ...]`.
     #[allow(dead_code)]
     pub fn blit_rgb888(
         &mut self,
@@ -204,7 +269,9 @@ impl FramebufferWriter {
 }
 
 /// Implementación del trait `core::fmt::Write` para `FramebufferWriter`.
-/// Esto permite usar macros de formato como `write!`, `writeln!`, etc.
+///
+/// Esto permite usar macros de formato como `write!`, `writeln!`, etc.,
+/// para escribir texto directamente en el framebuffer.
 impl fmt::Write for FramebufferWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.chars() {

@@ -1,96 +1,133 @@
+//! Punto de entrada principal del kernel de VesperOS.
+//!
+//! Este archivo contiene la función `_start`, que es la primera pieza de código
+//! Rust que se ejecuta después de que el gestor de arranque (Limine) carga el
+//! kernel. Se encarga de inicializar los subsistemas básicos, mostrar la
+//! pantalla de bienvenida y entrar en el bucle principal del sistema.
+
 #![no_std]
 #![no_main]
 
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-// Importamos nuestros módulos recién creados
+// --- Módulos del Kernel ---
 mod vesperfetch;
 mod vga;
 mod colors;
-mod branding; // Necesario para el logo
+mod branding;
+mod shell;
+mod app;
+mod arch;
 
-// Petición de framebuffer al gestor de arranque Limine.
+/// Petición al gestor de arranque Limine para obtener un framebuffer.
+///
+/// El framebuffer es una región de memoria que representa los píxeles de la pantalla,
+/// permitiendo el dibujo en modo gráfico.
 static FRAMEBUFFER_REQUEST: limine::request::FramebufferRequest = limine::request::FramebufferRequest::new();
-// Petición del mapa de memoria para saber cuánta RAM tenemos.
-static MEMMAP_REQUEST: limine::request::MemoryMapRequest = limine::request::MemoryMapRequest::new();
 
-// Tu toolchain de Rust parece requerir que `no_mangle` esté dentro de un bloque `unsafe`.
-// Esto no es estándar en todas las versiones, pero es necesario para que compile en tu entorno.
+/// Petición al gestor de arranque Limine para obtener el mapa de memoria.
+///
+/// El mapa de memoria nos informa sobre qué regiones de la RAM están
+/// disponibles para ser usadas por el kernel.
+pub static MEMMAP_REQUEST: limine::request::MemoryMapRequest = limine::request::MemoryMapRequest::new();
+
+/// Punto de entrada del kernel, llamado por el gestor de arranque.
+///
+/// Esta función no debe retornar nunca, por eso su tipo de retorno es `!`.
+///
+/// # Safety
+///
+/// El atributo `no_mangle` asegura que el nombre de esta función no sea alterado
+/// por el compilador, para que el enlazador (linker) pueda encontrarla con el
+/// nombre `_start`. El bloque `unsafe` es requerido por la edición de Rust 2024
+/// para este atributo.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    // Ensure we got a framebuffer.
+    // En este punto, las interrupciones de hardware están deshabilitadas.
+    // Primero, nos aseguramos de que el gestor de arranque nos haya proporcionado
+    // un framebuffer para poder dibujar en la pantalla.
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             let mut writer = vga::FramebufferWriter::new(&framebuffer); 
 
-            // --- Etapa 1: Pantalla de bienvenida con logo ---
+            // --- Etapa 1: Pantalla de bienvenida y carga ---
             {
                 writer.clear(colors::DEEP_BLACK);
                 
-                // 1. Dibuja el logo centrado en la parte superior de la pantalla.
-                // Esto utiliza el método `draw_image`, que también mueve el cursor debajo.
                 let logo_x = (framebuffer.width() as usize - branding::VESPER_LOGO_IMAGE.width) / 2;
                 let logo_y = (framebuffer.height() as usize / 2) - 120; // Un poco por encima del centro
                 writer.draw_image(&branding::VESPER_LOGO_IMAGE, logo_x, logo_y);
 
-                // 2. Dibuja el texto centrado debajo del logo.
-                // `writer.y_pos()` ahora está en la posición correcta gracias a `draw_image`.
                 let text_y_start = writer.y_pos();
                 writer.draw_centered_text(text_y_start, "Vesper OS v0.1.0", colors::TEXT_PRIMARY);
                 writer.draw_centered_text(text_y_start + 25, "Portable WebAssembly OS", colors::NEON_GREEN);
-                writer.draw_centered_text(text_y_start + 60, "Inicializando subsistemas...", colors::TEXT_PRIMARY);
+
+                // --- Barra de carga ---
+                let bar_width = 300;
+                let bar_height = 15;
+                let bar_x = (writer.width() - bar_width) / 2;
+                let bar_y = text_y_start + 70;
+
+                // Dibuja el fondo/borde de la barra
+                writer.draw_rect(bar_x, bar_y, bar_width, bar_height, colors::COSMIC_BLUE);
+
+                let inner_bar_width = bar_width - 4;
+                // Simula la carga llenando la barra progresivamente
+                for i in 0..=inner_bar_width {
+                    // Dibuja la parte de progreso de la barra
+                    writer.draw_rect(bar_x + 2, bar_y + 2, i, bar_height - 4, colors::NEON_GREEN);
+                    // Pequeña pausa para que la animación sea visible. Ajusta el valor para cambiar la velocidad.
+                    for _ in 0..1_500_000 { unsafe { asm!("nop"); } }
+                }
             }
 
-            // Pequeña pausa para que se vea la pantalla de bienvenida
-            for _ in 0..500_000_000 { unsafe { asm!("nop"); } }
+            // --- Etapa 2: Inicializar Interrupts y Shell ---
+            arch::init(); // Configura la IDT, el PIC y habilita las interrupciones.
 
-            // --- Etapa 2: Mostrar VesperFetch con información del sistema ---
-            {
-                writer.clear(colors::BACKGROUND_COLOR);
+            writer.clear(colors::BACKGROUND_COLOR);
+            let mut shell = shell::Shell::new();
+            shell.draw_prompt(&mut writer);
 
-                let mut total_memory: u64 = 0;
-                if let Some(memmap_response) = MEMMAP_REQUEST.get_response() {
-                    for entry in memmap_response.entries() {
-                        if entry.entry_type == limine::memory_map::EntryType::USABLE {
-                            total_memory += entry.length;
-                        }
+            // --- Etapa 3: Bucle principal del Kernel ---
+            // Ahora que las interrupciones están habilitadas, podemos
+            // recibir entrada del teclado.
+            loop {
+                // Sondea en busca de una tecla presionada.
+                if let Some(key) = arch::target::keyboard::poll_key() {
+                    if let pc_keyboard::DecodedKey::Unicode(character) = key {
+                        // Pasa el carácter a la shell para que lo procese.
+                        shell.handle_input_char(character, &mut writer);
                     }
                 }
-
-                let sys_info = vesperfetch::SystemInfo {
-                    os_name: "Vesper OS",
-                    os_version: "0.1.0 (Nocturna)",
-                    kernel_version: "Vesper-Core",
-                    cpu_info: "N/A", // Placeholder
-                    uptime: "N/A",   // Placeholder
-                    memory_total_mb: total_memory / 1024 / 1024,
-                    resolution_width: framebuffer.width(),
-                    resolution_height: framebuffer.height(),
-                };
-
-                // Dibujamos VesperFetch centrado
-                let fetch_x = (framebuffer.width() as usize - 400) / 2;
-                let fetch_y = (framebuffer.height() as usize - 200) / 2;
-
-                // Se elimina la animación para evitar el parpadeo y se dibuja el estado final.
-                let fetch = vesperfetch::VesperFetch::new(sys_info);
-                fetch.display(&mut writer, fetch_x, fetch_y);
+                // Detiene la CPU hasta la próxima interrupción para ahorrar energía.
+                arch::wait_for_interrupt();
             }
         }
     }
 
+    // Si no hay framebuffer o algo falla, detenemos el sistema.
     hcf();
 }
 
+/// Manejador de pánicos.
+///
+/// Esta función se llama cuando el kernel entra en pánico.
+/// Su única tarea es detener la CPU de forma segura para prevenir más daños.
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    // Por ahora, simplemente llamamos a hcf(). En el futuro, podría imprimir
+    // la información del pánico en la pantalla.
     hcf();
 }
 
-// Detiene el CPU de forma segura para siempre.
+/// Detiene la CPU de forma segura para siempre (Halt and Catch Fire).
+///
+/// Esta función deshabilita las interrupciones y luego entra en un bucle infinito
+/// que pone a la CPU en un estado de bajo consumo (`hlt`). Esto detiene toda
+/// ejecución de manera efectiva y segura.
 fn hcf() -> ! {
-    // Primero, deshabilitamos las interrupciones para asegurar que `hlt` no sea interrumpido.
+    // Deshabilitamos las interrupciones para asegurar que `hlt` no sea interrumpido.
     unsafe { asm!("cli", options(nomem, nostack)); }
     loop {
         // Detenemos el CPU hasta la próxima interrupción (que nunca llegará).
@@ -98,7 +135,14 @@ fn hcf() -> ! {
     }
 }
 
-// Secciones específicas para ayudar al linker a organizar la memoria correctamente
+// --- Secciones del Linker ---
+// Estos símbolos estáticos vacíos ayudan al script del linker a organizar
+// el binario del kernel en las secciones de memoria correctas:
+// .text: Código ejecutable
+// .rodata: Datos de solo lectura
+// .data: Datos inicializados
+// .bss: Datos no inicializados (inicializados a cero)
+
 #[used]
 #[unsafe(link_section = ".text.start")]
 static TEXT_START: [u8; 0] = [];
